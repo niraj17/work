@@ -1,0 +1,25 @@
+
+BerkeleyDB vs  Mysql:
+------------------------
+  - BDB has no sql processing, so less overhead
+  - BDB has no client/server  (although might need client server for final product)
+  - BDB has no column type, can directly map struct from the code into the data from
+  the database
+
+------------------------------
+
+BDB database schema:
+-------------------
+ BDB stores key/value pairs
+
+     "key" is relative path of the target (relative to workspace dir)
+     "value" contains dependency info + workspace info
+
+     Note that one key will have multiple values, one for each workspace
+
+---------------------------------
+
+Winkin logic design: 
+===================
+  1) Should not record dependency on something created during the build
+  2) Make sure max record of dependent is not exceeded

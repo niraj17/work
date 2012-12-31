@@ -1,0 +1,52 @@
+
+Requirement from FUSE subsystem:
+-------------------------------
+  1) Should provide a way to know the context (pid) where the particular
+  request originated. (like fuse_get_context API)
+
+  2) Need a way (API) to find the parent pid from a given pid. (On Linux, 
+      this can be done by parsing /proc files - race conditions??)
+
+
+
+Which version of FUSE to support:
+-----------------------------
+   To consider - 1) Supports in distro 2) Features requirement 
+
+     - RHEL 5.4  and RHEL 6 has fuse version 2.7.4. 
+     - SLES 10 SP2 and SLES 11 ships with FUSE version 2.7.2
+     - Ubuntu 9.04 ships with FUSE 2.7.4
+
+     - ioctl support came with FUSE version 2.8.0 (kernel version 2.6.29 ) 
+
+
+Design thoughts:
+---------------------
+
+ - Fuse library is multithreaded by default (unless you pass the single thread
+	 option - "-s"),
+   so we don't need to create our own thread, but we need to write code which is thread safe.
+   (by taking proper locks)
+
+ - Should we be using "futex" ?? (See http://people.redhat.com/drepper/futex.pdf )
+
+ - Use the "at" series of system calls, like openat
+
+ - Loopback files/dir : what should be the strategy ??
+
+    Use shared mount feature - http://lwn.net/Articles/159077/
+
+ - 
+
+ - The audit mechanism is based on pid appending to .audit (till we start
+	 using 2.8.0) . Is it prone to
+ race conditions or other abnormalities ...???
+
+FUSE interface : lowlevel vs highlevel:
+----------------------------------------
+  - NFS export has problems with highlevel interface
+
+
+Useful links:
+============
+  http://pagesperso-orange.fr/b.andre/fuse-interfaces.html

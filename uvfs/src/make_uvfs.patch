@@ -1,0 +1,477 @@
+diff -ru make-3.81/main.c make-3.81-uvfs/main.c
+--- make-3.81/main.c	2006-03-20 08:06:37.000000000 +0530
++++ make-3.81-uvfs/main.c	2010-01-30 13:41:52.134407945 +0530
+@@ -25,6 +25,10 @@
+ #include "rule.h"
+ #include "debug.h"
+ #include "getopt.h"
++#include "auditlib.h"
++
++#include <dlfcn.h>
++#include <db.h>
+ 
+ #include <assert.h>
+ #ifdef _AMIGA
+@@ -281,6 +285,20 @@
+ 
+ struct variable shell_var;
+ 
++void *handle = NULL;
++struct _audit_ops *aops;
++struct audit_info ai;
++struct audit_record *ard;
++int audit_init = 0;
++char *audit_db;
++
++DB *dbp;           /* DB structure handle */
++DBC *cursorp;      /* Cursor to the open DB*/
++u_int32_t flags;   /* database open flags */
++int ret;           /* function return value */
++
++
++
+ 
+ /* The usage output.  We write it this way to make life easier for the
+    translators, especially those trying to translate to right-to-left
+@@ -885,6 +903,88 @@
+ #endif
+ }
+ 
++int init_audit()
++{
++    int dl_success = 0;
++
++  /* init audit processing ... */
++    handle  = dlopen("auditlib.so", RTLD_LAZY);
++    if (handle != NULL) {
++        aops = dlsym(handle, "audit_ops");
++        if (aops != NULL) {
++            ard = dlsym(handle, "ar");
++            if (ard != NULL) {
++		dl_success = 1;
++	    }
++	    else {
++                printf("%s\n", dlerror());
++	    }
++	}
++	else {
++            printf( "%s\n", dlerror());
++	}
++    }
++    else {
++            printf("%s\n", dlerror());
++    }
++
++    if (dl_success) 
++    {
++       if (ISDB (DB_BASIC)) printf("calling init\n");
++       aops->init(&ai);
++       if (ISDB (DB_BASIC)) aops->set_debug_level(1);
++       sprintf(ai.audit_file_path, "/tmp/audit_%d\.log", getpid());
++    }
++    else 
++    {
++	printf("loading audit lib failed \n");
++    }
++
++    /* Initialize the structure. This
++     * database is not opened in an environment, 
++     * so the environment pointer is NULL. */
++    ret = db_create(&dbp, NULL, 0);
++    if (ret != 0) {
++      /* Error handling goes here */
++    }
++
++    /* Database open flags */
++    flags = DB_CREATE;    /* If the database does not exist, 
++                           * create it.*/
++    /*
++     * Configure the database for duplicates
++     */
++    ret = dbp->set_flags(dbp, DB_DUP);
++
++
++    audit_db = getenv("AUDIT_DB");
++    if (audit_db == NULL) audit_db = "/tmp/audit_db.db";
++
++    /* open the database */
++    ret = dbp->open(dbp,        /* DB structure pointer */
++                    NULL,       /* Transaction pointer */
++                    audit_db,    /* On-disk file that holds the database. */
++                    NULL,       /* Optional logical database name */
++                    DB_BTREE,   /* Database access method */
++                    flags,      /* Open flags */
++                    0);         /* File mode (using defaults) */
++    if (ret != 0) {
++      /* Error handling goes here */
++    }
++    /* Get the cursor */
++    dbp->cursor(dbp, NULL, &cursorp, 0);
++
++    /* init is successful */
++    audit_init = 1;
++}
++int finish_audit()
++{
++    /* Cursors must be closed */
++    if (ISDB (DB_BASIC)) printf("closing cursor and db handle ...\n");
++    if (cursorp != NULL) cursorp->close(cursorp); 
++    /* When we're done with the database, close it. */
++    if (dbp != NULL) dbp->close(dbp, 0); 
++}
+ 
+ #ifdef _AMIGA
+ int
+@@ -1590,6 +1690,8 @@
+     default_goal_name = &v->value;
+   }
+ 
++  init_audit();
++
+   /* Read all the makefiles.  */
+ 
+   read_makefiles
+@@ -2221,6 +2323,8 @@
+       error (NILF,
+              _("warning:  Clock skew detected.  Your build may be incomplete."));
+ 
++    finish_audit();
++
+     /* Exit.  */
+     die (status);
+   }
+@@ -2935,7 +3039,7 @@
+      year, and none of the rest of it should be translated (including the
+      word "Copyright", so it hardly seems worth it.  */
+ 
+-  printf ("%sGNU Make %s\n\
++  printf ("%sGNU Make %s (with auditing support from uvfs)\n\
+ %sCopyright (C) 2006  Free Software Foundation, Inc.\n",
+           precede, version_string, precede);
+ 
+diff -ru make-3.81/remake.c make-3.81-uvfs/remake.c
+--- make-3.81/remake.c	2006-03-20 08:06:37.000000000 +0530
++++ make-3.81-uvfs/remake.c	2010-02-06 21:33:10.727609719 +0530
+@@ -23,7 +23,9 @@
+ #include "dep.h"
+ #include "variable.h"
+ #include "debug.h"
++#include "auditlib.h"
+ 
++#include<db.h>
+ #include <assert.h>
+ 
+ #ifdef HAVE_FCNTL_H
+@@ -39,6 +41,14 @@
+ #include <io.h>
+ #endif
+ 
++extern struct _audit_ops *aops;
++extern struct audit_info ai;
++extern struct audit_record *ard;
++extern int audit_init;
++extern DB *dbp;
++extern DBC *cursorp;
++
++
+ extern int try_implicit_rule PARAMS ((struct file *file, unsigned int depth));
+ 
+ 
+@@ -1088,6 +1098,272 @@
+ 
+   return 0;
+ }
++static int check_audit_record(char *workspace_path, struct audit_record *ar5)
++{
++    char full_path[PATH_MAX];
++    int i = 0, mismatch=0;
++    struct stat st_buf;
++    char hash[AUDIT_HASH_SIZE];
++
++    if (ISDB (DB_BASIC)) printf("check_audit_record: ad->count = %d\n", ar5->count);
++    for(i = 0; i < ar5->count ; i++) {
++	/* skip if this is not a dependency record*/
++	if (ar5->ad[i].type != AUDIT_DEPS) continue;
++
++	sprintf(full_path, "%s%s", workspace_path, ar5->ad[i].path);
++        if (ISDB (DB_BASIC)) printf("checking path %s\n", full_path);
++	if (stat(full_path, &st_buf) == 0) {
++           if (st_buf.st_size != ar5->ad[i].st_size) {
++	       if (ISDB (DB_BASIC)) printf("mismatch in size of %s : %d vs %d\n", full_path,
++		       (int) st_buf.st_size, (int) ar5->ad[i].st_size);
++	       mismatch = 1;
++	       break;
++	   } else {  /* size is same, we should check hash now*/
++               aops->get_audit_hash(full_path, hash, AUDIT_HASH_SIZE);
++	       if (memcmp(hash, ar5->ad[i].hash, AUDIT_HASH_SIZE) != 0) {
++	           if (ISDB (DB_BASIC)) printf("mismatch in hash of %s \n", full_path);
++	           mismatch = 1;
++	           break;
++	       }
++	   }
++
++	} else { /* stat failed, we should error out*/
++	    mismatch = 1;
++	    break;
++	}
++    }
++
++    if (ISDB (DB_BASIC)) printf("returning mismatch = %d\n", mismatch);
++    return (mismatch);
++}
++static int copy_extra_dos(char *workspace_path, struct audit_record *ar5)
++{
++    char command[PATH_MAX];
++    char target_path[PATH_MAX];
++    char *dir = NULL;
++    int i = 0, mismatch=0;
++    struct stat st_buf;
++
++    if (ISDB (DB_BASIC)) printf("copy_extra_dos: ad->count = %d\n", ar5->count);
++    for(i = 0; i < ar5->count ; i++) {
++	/* skip if this is not a do */
++	if (ar5->ad[i].type != AUDIT_DO) continue;
++
++	/* Try to create intermediate directories*/
++	sprintf(target_path, "%s/%s", workspace_path, ar5->ad[i].path); 
++	dir = dirname(target_path);
++	sprintf(command, "mkdir -p %s", dir);
++        if (ISDB (DB_BASIC)) printf("Intermediate dir, command=%s\n", command);
++	system(command);
++
++	/* Now try to copy the DO */
++        sprintf(command, "cp %s/%s  %s/%s", ar5->workspace_path,
++		      ar5->ad[i].path, workspace_path, ar5->ad[i].path);
++
++        if (ISDB (DB_BASIC)) printf("DO copy, command=%s\n", command);
++	if (system(command) == 0) {
++           if (ISDB (DB_BASIC)) printf("Successfully copied DO=%s\n", ar5->ad[i].path);
++	} else {
++           if (ISDB (DB_BASIC)) printf("Failed while coping DO=%s\n", ar5->ad[i].path);
++	}
++    }
++
++    return 0;
++}
++static int update_audit_db(char *workspace_path, DBC *cursorp, DBT *my_key, DBT *my_data)
++{
++    int ret = 0;
++    struct audit_record *ard2 = NULL, tmp_ard;
++    DBT tmp_data;
++
++    memset(&tmp_data, 0, sizeof(DBT));
++    memset(&tmp_ard, 0, sizeof(struct audit_record));
++
++    tmp_data.data = &tmp_ard;
++    tmp_data.ulen = sizeof(struct audit_record);
++    tmp_data.flags = DB_DBT_USERMEM;
++
++    /* begin search into the database */
++    ret = cursorp->get(cursorp, my_key, &tmp_data, DB_SET);
++    while (ret != DB_NOTFOUND) {
++      if (ISDB (DB_BASIC)) printf("found key: %s\n", (char *)my_key->data);
++
++      /* if same workspace, replace it */
++      if (ISDB (DB_BASIC)) printf("tmp_ard->workspace_path=%s\n",tmp_ard.workspace_path);
++      if (ISDB (DB_BASIC)) printf("workspace_path=%s\n",workspace_path);
++      if (strcmp(tmp_ard.workspace_path, workspace_path) == 0) { 
++	  if (ISDB (DB_BASIC)) printf("Now replacing DB_CURRENT ...\n");
++          ard2 = (struct audit_record *) my_data->data;
++          sprintf(ard2->workspace_path, "%s", workspace_path);
++          if((ret = cursorp->put(cursorp, my_key, my_data, DB_CURRENT)) != 0) {
++              printf("%s: %s\n", "put error", db_strerror(ret));
++	  }
++	  break;
++      }
++      ret = cursorp->get(cursorp, my_key, &tmp_data, DB_NEXT_DUP);
++    }
++
++    if (ret == DB_NOTFOUND) { /* first time in this workspace*/
++      if (ISDB (DB_BASIC)) printf("Adding first time : key=%s\n", my_key->data);
++      ard2 = (struct audit_record *) my_data->data;
++      sprintf(ard2->workspace_path, "%s", workspace_path);
++      if (ISDB (DB_BASIC)) printf("ard2->workspace_path = %s\n", ard2->workspace_path);
++      if((ret = cursorp->put(cursorp, my_key, my_data, DB_KEYFIRST)) != 0) {
++             printf("%s: %s\n", "put error", db_strerror(ret));
++      }
++    }
++
++    return ret;
++}
++static int try_winkin(char *target)
++{
++    char target_full_path[PATH_MAX];
++    char cwd[PATH_MAX];
++    char *target_relative_path;
++    DBT key, data;
++    int db_ret = 0, found = 0, i =0;
++    struct audit_record ard1;
++    char command[1024];
++
++
++    /* if audit infrastrucutre is not initialized, we cannot proceed*/
++    if (audit_init == 0) return 1;
++
++    memset(&key, 0, sizeof(DBT));
++    memset(&data, 0, sizeof(DBT));
++    memset(&ard1, 0, sizeof(struct audit_record));
++
++    /* get the relative path of the target in the workspace */
++    if (getcwd(cwd, PATH_MAX) == NULL) {
++          printf("error in getcwd \n");
++    }
++    if (ISDB (DB_BASIC)) printf("cwd=%s\n", cwd);
++
++    sprintf(target_full_path, "%s/%s",cwd, target);
++
++    if (ISDB (DB_BASIC)) printf("target_full_path = %s\n", target_full_path);
++    if (ISDB (DB_BASIC)) printf("workspace_path = %s\n", ai.workspace_path);
++    target_relative_path = target_full_path + strlen(ai.workspace_path) +1;
++    if (ISDB (DB_BASIC)) printf("target_relative_path = %s\n", target_relative_path);
++
++  /* Wink-in logic : Check if the database has any entry for
++   *  this target. 
++   */
++    key.size = strlen(target_relative_path) + 1;
++    key.data = target_relative_path;
++
++    data.data = &ard1;
++    data.ulen = sizeof(struct audit_record);
++    data.flags = DB_DBT_USERMEM;
++
++    found = 0;
++
++    printf("Checking for winkin for target %s ...\n", target_relative_path);
++
++    db_ret = cursorp->get(cursorp, &key, &data, DB_SET);
++    while (db_ret != DB_NOTFOUND) {
++        if (ISDB (DB_BASIC)) printf("found key: %s\n", (char *)key.data);
++
++        /* same workspace ?, ignore it */
++        if (ISDB (DB_BASIC)) printf("ard1->workspace_path=%send\n",ard1.workspace_path);
++            if (ISDB (DB_BASIC)) printf("ai.workspace_path=%send\n",ai.workspace_path);
++            if (strcmp(ard1.workspace_path, ai.workspace_path) != 0) {
++                  if (check_audit_record(ai.workspace_path, &ard1) == 0) {
++		      found = 1;
++		      break;
++            }
++        }
++        db_ret = cursorp->get(cursorp, &key, &data, DB_NEXT_DUP);
++    }
++
++    if (found == 0) { /* Not found, build it */
++        printf("No candidate found for winkin, need to build target %s\n", target_relative_path);
++	/*
++        aops->start_audit(&ai);
++        execute_file_commands (file);
++        aops->read_audit_data(target_relative_path, &ai);
++        aops->stop_audit(&ai);
++	*/
++	return 1;
++    } else { /* Try to copy into current workspace */
++	      printf(">> winkin %s from workspace %s ...\n", target_relative_path,
++		      ard1.workspace_path);
++	      sprintf(command, "cp %s/%s  %s/%s", ard1.workspace_path,
++		      target_relative_path, ai.workspace_path,
++		      target_relative_path);
++	      if (ISDB (DB_BASIC)) printf("Command=%s\n", command);
++	      if (system(command) == 0) {
++		  /* Now that wink-in is successful, update the database with
++		   * this info so that further builds can do wink-in from this
++		   * workspace also.
++		   */
++		  copy_extra_dos(ai.workspace_path, &ard1);
++                  if ((db_ret = update_audit_db(ai.workspace_path, cursorp, &key, &data)) != 0) {
++                        printf("%s: %s\n", "put error", db_strerror(db_ret));
++		  }
++		  return 0;
++	      } else { /* winkin failed, rebuild ...*/
++		  printf(">> winkin failed ...going for rebuilding ...\n");
++		  /*
++                  aops->start_audit(&ai);
++	          execute_file_commands (file);
++                  aops->read_audit_data(target_relative_path, &ai);
++                  aops->stop_audit(&ai);
++		  */
++	          return 1;
++	      }
++    }
++    return 0;
++}
++int process_audit(char *target) 
++{
++    char target_full_path[PATH_MAX];
++    char cwd[PATH_MAX];
++    char *target_relative_path;
++    DBT key, data;
++    int db_ret = 0, found = 0, i =0;
++
++    /* if audit infrastrucutre is not initialized, we cannot proceed*/
++    if (audit_init == 0) return 1;
++
++    memset(&key, 0, sizeof(DBT));
++    memset(&data, 0, sizeof(DBT));
++    /* get the relative path of the target in the workspace */
++    if (getcwd(cwd, PATH_MAX) == NULL)
++    {
++          printf("error in getcwd \n");
++    }
++    if (ISDB (DB_BASIC)) printf("cwd=%s\n", cwd);
++
++    sprintf(target_full_path, "%s/%s",cwd, target);
++
++    if (ISDB (DB_BASIC)) printf("target_full_path = %s\n", target_full_path);
++    if (ISDB (DB_BASIC)) printf("workspace_path = %s\n", ai.workspace_path);
++    target_relative_path = target_full_path + strlen(ai.workspace_path) +1;
++    if (ISDB (DB_BASIC)) printf("target_relative_path = %s\n", target_relative_path);
++
++
++    /* read data from the audit log file*/
++     aops->read_audit_data(target_relative_path, &ai);
++
++     /*set key and data for database */
++     key.size = strlen(target_relative_path) + 1;
++     key.data = target_relative_path;
++
++     data.data = ard; /* if auditing was done, it will be in ard */
++     data.size = ard->length;
++
++     if (ISDB (DB_BASIC)) printf("data.size = %d\n", data.size);
++
++     /* find if the database has entries for this target.
++     If yes, find if there is entry corresponding to this
++     workspace and update that entry*/
++
++      if ((db_ret = update_audit_db(ai.workspace_path, cursorp, &key, &data)) != 0) {
++           printf("%s: %s\n", "put error", db_strerror(db_ret));
++      }
++      return 0;
++}
+ 
+ /* Having checked and updated the dependencies of FILE,
+    do whatever is appropriate to remake FILE itself.
+@@ -1119,10 +1395,21 @@
+ 
+       /* The normal case: start some commands.  */
+       if (!touch_flag || file->cmds->any_recurse)
+-	{
+-	  execute_file_commands (file);
++      {
++          if (file->phony) {
++              if (ISDB (DB_BASIC)) printf("Target %s is phony\n", file->name);
++	      execute_file_commands (file);
++	      return;
++	  }
++
++	  if (try_winkin(file->name) != 0) {
++              aops->start_audit(&ai);
++              execute_file_commands (file);
++	      process_audit(file->name);
++              aops->stop_audit(&ai);
++	  }
+ 	  return;
+-	}
++      }
+ 
+       /* This tells notice_finished_file it is ok to touch the file.  */
+       file->update_status = 0;

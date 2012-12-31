@@ -1,0 +1,35 @@
+
+Some performance data for UVFS prototype (PoC):
+==============================================
+
+Machine configuration: Thinkpad T43
+Operating System : Ubuntu 9.10 (kernel version - 2.6.31-17).
+
+Test details: 
+    Three projects (fuse-2.8.0, make-3.81, samba-3.4.5) were compiled
+    using:
+        1) ext4 filesystem (Linux native filesystem on Ubuntu), 
+        2) uvfs filesystem (first time compilation), 
+        3) uvfs filesystem with winkin (second compilation). 
+    Test was repeated 5 times with reboot in between. Average of the 5 is
+    shown in the table below.
+
+    For build avoidance, two workspaces on the same machine was used (so it's
+    a local copy).
+
+    GNU make (version 3.81) was modified to interface with BerkeleyDB 
+    (version 4.6), which was used to store metadata information on the 
+    same machine.
+
+
+
+                 |  fuse-2.8.0  |  make-3.81    |  samba-3.4.5 
+---------------------------------------------------------------------------
+ext4             |0m19.8        |  0m10         | 10m32,9m50
+---------------------------------------------------------------------------
+uvfs             |0m20.0        |  0m9          | 14m21, 13m24, 13m20 
+(first compile)
+---------------------------------------------------------------------------
+uvfs             |0m2.5         |0m2          | 0m31, 0m24s, 0m21s
+(build avoidance)
+---------------------------------------------------------------------------

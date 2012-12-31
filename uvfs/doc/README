@@ -1,0 +1,36 @@
+
+FUSE based Audit filesystem  - very crude implementation - use at your own risk
+------------------------------------------------------------------------
+Works only on Linux (with FUSE) for now ...
+----------------------------
+
+1) HOWTO mount/umount:
+
+   - Make sure that your executible (say uvfs)  is in PATH.
+   - for mount:  mount.fuse <executible_name> <destination_dir>
+   - for umount: fusermount -u  <destination_dir>
+
+       	Example : 
+     		mount.fuse uvfs -o  rootdir=/tmp/myroot  /tmp/mount
+
+What it does:
+   - Mirrors the directory given by rootdir= option into the mount point.
+     (If there is no root option provided, mirrors the / dir)
+
+   - How to do Auditing:
+                You specifiy the pid by putting that into the /mount_point/.audit file.
+                This is a special file (RAM based) which only takes data into a certain format.
+                Just append the pid using echo command like this:
+                     echo "1234" >> mount_point_full_path/.audit
+
+                You can later see the content using "cat mount_point_full_path/.audit"
+
+                Note - Don;t do any other operation other that this echo and cat on this file.
+                       This is still work-in-progress :)
+          
+              Now, look into the file /tmp/audit.log for audit data.
+              Format of the data is "a_pid|pid|action|path" 
+
+Enjoy !
+More to come later ...
+

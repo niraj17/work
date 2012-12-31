@@ -1,0 +1,21 @@
+
+Filesystem:
+-----------------------
+- Selective logging of operations
+- Filesystem tests 
+- daemon thread to cleanup the dead processes...
+- Create an atrribute cache (for speed up in getattr)
+
+- Copy audit data in-memory - possible??
+
+- Multithreading, locking etc etc...complicated and big effort
+
+
+- Use md5 sum for unique identification
+- Cleanup interface in GNU make and use clean callbacks
+- Unifiy audit log file - one audit log for whole build (with marker
+	supports)
+- Add ioctl support (FUSE 2.8.x )
+
+- Try to reduce size of the database - add serialization routines
+- client/server design for the database
