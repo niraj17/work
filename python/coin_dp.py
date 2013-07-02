@@ -30,7 +30,7 @@ def main():
     if (len(sys.argv) >= 2):
         sum = int(sys.argv[1])
 
-    print "Solving coin problem using DP ..."
+    print "Solving coin problem using Dynamic Programming ..."
     print "Total value=", sum, " coins =", coins
 
     (ans, last) = coin_dp(sum, coins)

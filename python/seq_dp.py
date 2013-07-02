@@ -3,6 +3,7 @@
 # Dynamic programming for Longest Increasing Subsequence
 # See http://en.wikipedia.org/wiki/Longest_increasing_subsequence
 #
+#  sol[n] = sol[n-1] + 1
 
 import sys
 
