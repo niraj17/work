@@ -1,0 +1,23 @@
+
+int i = 0xabcdef12; 32bit integer
+char c = 'A';
+int p = ; 0-3
+
+
+char *cc = &i;
+cc = cc + p;
+*cc = c;
+
+cal you call back ?. when I call, it seems, I can't hear you properly.
+Let me call you then. I will call now.
+
+
+
+unsigned int k = (unsigned int ) c;
+k = k << p * 8;
+unsigned int j = ~ (0xFF << p * 8);
+            
+i = i & j;
+i = i & k; 
+
+-------------------------
