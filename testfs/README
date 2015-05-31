@@ -1,0 +1,8 @@
+
+TESTFS is a Userspace filesystem somewhat similar to HDFS.
+It doesn't use FUSE and not posix complaint.
+
+It provides APIs similar to HDFS (Hadoop File System)
+
+
+testfs.h is the external interface to be used by client programs
