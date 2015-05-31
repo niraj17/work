@@ -27,6 +27,27 @@ int verify_bst(node_t *n, int min, int max)
 	return 0;
 }
 
+node_t * find_successor(node_t *root, node_t *node)
+{
+	node_t *t = root, *succ;
+	if (node->right) {
+		return find_minimum(node->right);
+	} 
+	while (t) {
+		if (t->d > node->d) {
+			succ = t;
+			t = t->left;
+		} else if (t->d < node->d) {
+			t = t->right;
+		}
+		else {
+			break;
+		}
+	}
+	return succ;
+
+}
+
 int main() {
 	int result  = 0;
 

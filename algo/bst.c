@@ -27,9 +27,19 @@ int verify_bst(node_t *n, int min, int max)
 	return 0;
 }
 
+node_t *find_minimum(node_t *n)
+{
+	node_t *min = n;
+	while (n->left) {
+		min = n->left;
+		n = n->left;
+	}
+	return min;
+}
+
 node_t * find_successor(node_t *root, node_t *node)
 {
-	node_t *t = root, *succ;
+	node_t *t = root, *succ = NULL;
 	if (node->right) {
 		return find_minimum(node->right);
 	} 
@@ -52,6 +62,7 @@ int main() {
 	int result  = 0;
 
 	node_t n1, n2, n3, n4;
+	node_t *tmp = NULL;
 
 	n1.d = 20;
 	n1.left = &n2;
@@ -72,4 +83,12 @@ int main() {
 
 	result = verify_bst(&n1,  MIN, MAX);
 	printf("result is %d\n", result);
+
+	tmp = find_successor(&n1, &n3);
+	if (tmp) {
+		printf("successor is %d\n", tmp->d);
+	} else {
+		printf("NO successor found\n");
+	}
+
 }

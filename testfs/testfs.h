@@ -6,7 +6,7 @@
 
 typedef struct _testFS * testFS;
 
-typedef struct _tstFile * testFile;
+typedef struct _testFile * testFile;
 
 testFS testfs_connect(char *fs_path, int  flags);
 
