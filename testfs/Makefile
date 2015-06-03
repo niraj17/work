@@ -1,7 +1,7 @@
 
 all: testfs client
 testfs: 
-	gcc -g -c testfs.c -o testfs.o
+	gcc -g -Wall -c testfs.c -o testfs.o
 client:
 	gcc -g client.c testfs.o
 clean:

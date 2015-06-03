@@ -10,10 +10,12 @@
 #include<stdlib.h>
 #include<sys/types.h>
 #include<sys/stat.h>
+#include<unistd.h>
 #include<fcntl.h>
 #include<string.h>
 #include<errno.h>
 
+#define DEBUG 1
 
 static int alloc_empty_slot(char *b, int size)
 {
@@ -37,17 +39,17 @@ static int alloc_empty_slot(char *b, int size)
 static int write_block(struct _testFS *fs, int bno, struct _testfs_buffer *bf)
 {
 	lseek(fs->fd, fs->sb->block_size * bno, SEEK_SET);
-	write(fs->fd, bf->data, sizeof(fs->sb->block_size));
+	write(fs->fd, bf->data, fs->sb->block_size);
 	return 0;
 }
 static int read_block(struct _testFS *fs, int bno, struct _testfs_buffer **bf)
 {
 	struct _testfs_buffer *b = NULL;
 	b = malloc(sizeof(struct _testfs_buffer));
-	b->data = malloc(sizeof(fs->sb->block_size));
+	b->data = malloc(fs->sb->block_size);
 
 	lseek(fs->fd, fs->sb->block_size * bno, SEEK_SET);
-	read(fs->fd, b->data, sizeof(fs->sb->block_size));
+	read(fs->fd, b->data, fs->sb->block_size);
 
 	*bf = b;
 	return 0;
@@ -56,6 +58,7 @@ static int free_buffer(struct _testfs_buffer *bf)
 {
 	free(bf->data);
 	free(bf);
+	return 0;
 }
 static struct _testfs_inode *read_inode(struct _testFS *tfs, int ino)
 {
@@ -66,15 +69,16 @@ static struct _testfs_inode *read_inode(struct _testFS *tfs, int ino)
 }
 static int write_inode(struct _testFS *tfs, struct _testfs_inode *ti)
 {
-		/* write inode */
-		lseek(tfs->fd, tfs->sb->itable_start * tfs->sb->block_size + ti->ino *sizeof(struct _testfs_inode), SEEK_SET);
-		write(tfs->fd, ti, sizeof(struct _testfs_inode));
+	/* write inode */
+	lseek(tfs->fd, tfs->sb->itable_start * tfs->sb->block_size + ti->ino *sizeof(struct _testfs_inode), SEEK_SET);
+	write(tfs->fd, ti, sizeof(struct _testfs_inode));
+	return 0;
 }
 int alloc_block(struct _testFS *fs, struct _testfs_inode *ti, int fbn)
 {
-	struct _testfs_buffer *bf = NULL, *bf1 = NULL;
+	struct _testfs_buffer *bf = NULL;
 	int bno = fs->sb->bitmap_start, new_bno = 0;
-	int i = 0, slot = 0, ino = 0, count = 0;
+	int i = 0, slot = 0,  count = 0;
 	for (i=bno; i< bno+fs->sb->bitmap_size; i++)
 	{
 		read_block(fs, i, &bf);
@@ -103,16 +107,30 @@ static int  get_block_number(struct _testFS *fs, struct _testfs_inode *ti, int f
 	}
 	return -1; /* not allocated yet*/
 }
+static int add_block_to_inode(struct _testfs_inode *ti, int fbn, int bno)
+{
+	if (fbn <= 5 ) { /* direct blocks */
+		ti->blocks[fbn] = bno;
+        }  else { /* TODO : indirect blocks */
+		printf("INDIRECT block not implemented \n\n");
+	}
+	return -1; /* not allocated yet*/
+}
 static int  create_name(struct _testFS *fs, struct _testfs_inode *parent, char *name, int len, int type)
 {
 	struct _testfs_inode *child = malloc(sizeof (struct _testfs_inode));
 	struct _testfs_buffer *bf = NULL, *bf1 = NULL;
 	struct _testfs_dirent *de = malloc (sizeof (struct _testfs_dirent));
 	int slot = -1, i = 0, ino = 0, count = 0, offset = 0;
-	/* allocate a new inode on disk and write it */
-	/*child_inode = alloc_inode(); */
+	int fbn = 0;
+	struct _testfs_buffer *bf_new = malloc(sizeof(struct _testfs_buffer));
+	bf_new->data = malloc(fs->sb->block_size);
 	int bno = fs->sb->ibitmap_start;
 
+#ifdef DEBUG
+	printf("Name not found, creating name in inode :%d, old_size=%d\n", parent->ino, parent->size);
+#endif
+	/* allocate a new inode on disk and write it */
 	for (i=bno; i< bno+fs->sb->ibitmap_size; i++)
 	{
 		read_block(fs, i, &bf);
@@ -138,18 +156,32 @@ static int  create_name(struct _testFS *fs, struct _testfs_inode *parent, char *
 	memcpy(de->name, name, len);
 	de->len = len;
 
-	bno = parent->size/fs->sb->block_size;
-	offset = parent->size - bno * fs->sb->block_size;
-	read_block(fs, bno, &bf1);
-	memcpy(bf1->data+offset, de, sizeof(struct _testfs_dirent));
-	write_block(fs, bno, bf1);
-	free_buffer(bf1);
+	fbn = parent->size/fs->sb->block_size;
+	offset = parent->size - fbn * fs->sb->block_size;
+	bno = get_block_number(fs, parent, fbn);
+
+	if (bno > 0) {
+		read_block(fs, bno, &bf1);
+		memcpy(bf1->data + offset, de, sizeof(struct _testfs_dirent));
+		write_block(fs, bno, bf1);
+		free_buffer(bf1);
+	} else {
+		bno = alloc_block(fs, parent, fbn);
+		memcpy(bf_new->data + offset, de, sizeof(struct _testfs_dirent));
+		write_block(fs, bno, bf_new);
+		/* Add this block to inode*/
+		add_block_to_inode(parent, fbn, bno);
+	}
+	free_buffer(bf_new);
 
 	parent->size += sizeof (struct _testfs_dirent);
+	
+#ifdef DEBUG
+	printf("parent inode (%d) size is now :%d\n", parent->ino,  parent->size);
+#endif
 	write_inode(fs, parent);
 
-	return 0;
-
+	return ino;
 }
 
 static int find_name_in_buffer(struct _testfs_buffer *bf, char *n, int len, int limit)
@@ -183,7 +215,12 @@ static int get_name_in_inode(struct _testFS *fs, struct _testfs_inode *ti, char 
 
 		ino = find_name_in_buffer(bf, name, len, limit);
 		free_buffer(bf);
-		if (ino) return ino;
+		if (ino) {
+#ifdef DEBUG
+			printf("found name in inode :%d\n", ino);
+#endif
+			return ino;
+		}
 	}
 	/* if not found, and O_CREAT flag given, then create it*/
 	if (flags & TESTFS_CREATE) {
@@ -199,51 +236,54 @@ static int get_name_in_inode(struct _testFS *fs, struct _testfs_inode *ti, char 
 }
 static int init_bitmaps(struct _testFS *fs) /* also allocates root inode*/
 {
-	int bno = 0, i = 0;
-	int *data = NULL;
-	struct _testfs_buffer *bf = NULL;
+	int bno = 0;
+	struct _testfs_buffer *bf = malloc(sizeof (struct _testfs_buffer));
+	bf->data = calloc(1, fs->sb->block_size);
 
-	read_block(fs, fs->sb->ibitmap_start, &bf);
-	bzero(bf->data, sizeof(fs->sb->block_size));
-	data  = (int *) bf->data;
-	*data = 0xCFFFFFFF; /* Allocate first two bits*/
+//	bzero(bf->data, fs->sb->block_size);
+	*(bf->data) = 0xC0; /* Reserve first two bits*/
 	write_block(fs, fs->sb->ibitmap_start, bf);
-	free_buffer(bf);
 
+	bzero(bf->data, fs->sb->block_size);
 	for (bno = fs->sb->ibitmap_start+1; bno < fs->sb->data_start-1;
 			bno++)
 	{
-		read_block(fs, fs->sb->ibitmap_start, &bf);
-		bzero(bf->data, sizeof(fs->sb->block_size));
-		write_block(fs, fs->sb->ibitmap_start, bf);
+		write_block(fs, bno, bf);
 	}
+	free_buffer(bf);
+	return 0;
 }
 
 /* ==============================================================*/
 testFS testfs_connect(char *fs_path, unsigned int  flags)
 {
 	int ret = 0, fd = 0;
-	testFS tfs = malloc (sizeof(testFS *));
+	testFS tfs = malloc(sizeof(struct _testFS ));
 	struct _testfs_superblock  *tsb = malloc (sizeof(struct _testfs_superblock));
 
+	bzero(tfs, sizeof(struct _testFS ));
 	fd = open(fs_path, O_RDWR| O_CREAT, S_IRWXU);
 	if (fd < 0) {
 		perror("Error");
 		exit(1);
 	}
 	tfs->fd = fd;
+	tfs->sb = tsb;
 
 	/* if not initlized, initlize it */
 	ret = read(tfs->fd, tsb, sizeof(struct _testfs_superblock ));
 	printf("READ : ret=%d\n", ret);
-	tfs->sb = tsb;
 
 	printf("MAgic = %s\n", tsb->magic);
 
 	if (strcmp(tsb->magic, TESTFS_MAGIC) != 0) {
 
 		printf("New filesystem, initlizing superblock ...\n");
-		strncpy(tsb->magic, TESTFS_MAGIC, 8);
+		bzero(tsb, sizeof(struct _testfs_superblock));
+
+		snprintf(tfs->fs_path, 1024, "%s", fs_path);
+		snprintf(tsb->magic,8, "%s", TESTFS_MAGIC);
+
 		tsb->block_size = 1024;
 		tsb->total_size = 1024; /* in terms of blocks*/
 		tsb->inode_size = INODE_SIZE;
@@ -257,7 +297,7 @@ testFS testfs_connect(char *fs_path, unsigned int  flags)
 		tsb->bitmap_size   = tsb->total_size/tsb->block_size + 1; /* should be calculated !!*/
 		tsb->data_start    = tsb->bitmap_start + tsb->bitmap_size + 1;
 		
-		ret = write(tfs->fd, tsb, sizeof(struct _testfs_superblock ));
+		ret = write(tfs->fd, tsb, sizeof(struct _testfs_superblock));
 		printf("Write : ret=%d\n", ret);
 
 
@@ -271,11 +311,17 @@ testFS testfs_connect(char *fs_path, unsigned int  flags)
 		/* write root inode */
 		write_inode(tfs, tfs->root);
 	} else {
+#ifdef DEBUG
+		printf("Superblock found, now reading root inode ...\n");
+#endif
 		/* read root inode */
 		tfs->root = read_inode(tfs, ROOT_INODE);
 	}
 
+#ifdef DEBUG
 	printf("SB: block_size=%d, itable_size=%d, data_start = %d\n", tsb->block_size, tsb->itable_size, tsb->data_start);
+	printf("sizeof(inode) = %d\n", sizeof(struct _testfs_inode));
+#endif
 
 	return tfs;
 }
@@ -288,12 +334,12 @@ testFile testfs_open(testFS tfs, char *file_path, unsigned int flags)
 	testFile tfile;
 
 	struct _testfs_inode *tinode = tfs->root;
-	struct _testfs_inode ti_tmp, *ti;
+	struct _testfs_inode  *ti;
 	int len = 0, ino = 0;
 	unsigned int myflags = flags;
 
 	char *path = file_path;
-	char  *c, *start;
+	char  *start = NULL;
 
 	while (*path != '\0') {
 		while (*path == '/') path++;
@@ -321,7 +367,7 @@ testFile testfs_open(testFS tfs, char *file_path, unsigned int flags)
 		tinode = read_inode(tfs, ino);
 	}
 	if (tinode && tinode != tfs->root) {
-		tfile = malloc(sizeof (testFile  *));
+		tfile = malloc(sizeof (struct _testFile));
 		tfile->inode = tinode;
 		tfile->offset = 0;
 		return tfile;
@@ -338,7 +384,7 @@ void testfs_close(testFS tfs, testFile tfile)
 int testfs_read(testFS tfs, testFile tfile, char *buffer, int size)
 {
 	int bno = 0, fbn1 = 0, fbn2 = 0; /* FBNs starts from zero*/
-	int fbn1_start = 0, fbn2_end = 0, i = 0;
+	int fbn1_start = 0, i = 0;
 	int remaining_size = size, b_len = 0;
 	struct _testfs_buffer *bf = NULL;
 	char *out = buffer;
@@ -384,12 +430,12 @@ int testfs_read(testFS tfs, testFile tfile, char *buffer, int size)
 int testfs_write(testFS tfs, testFile tfile, char *buffer, int size)
 {
 	int bno = 0, fbn1 = 0, fbn2 = 0; /* FBNs starts from zero*/
-	int fbn1_start = 0, fbn2_end = 0, i = 0;
+	int fbn1_start = 0, i = 0;
 	int remaining_size = size, b_len = 0;
 	struct _testfs_buffer *bf = NULL;
 	char *out = buffer;
 	struct _testfs_buffer *bf_new = malloc(sizeof(struct _testfs_buffer));
-	bf_new->data = malloc(sizeof(tfs->sb->block_size));
+	bf_new->data = malloc(tfs->sb->block_size);
 
 	if (tfile->offset > 0) {
 		fbn1 = tfile->offset/tfs->sb->block_size;
@@ -411,6 +457,7 @@ int testfs_write(testFS tfs, testFile tfile, char *buffer, int size)
 		bno = alloc_block(tfs, tfile->inode, fbn1);
 		memcpy(bf_new->data + fbn1_start, out, b_len);
 		write_block(tfs, bno, bf_new);
+		add_block_to_inode(tfile->inode, fbn1, bno);
 	}
 	out = out + b_len;
 	remaining_size = remaining_size - b_len;
@@ -425,9 +472,10 @@ int testfs_write(testFS tfs, testFile tfile, char *buffer, int size)
 				write_block(tfs, bno, bf);
 				free_buffer(bf);
 			} else {
-				bno = alloc_block(tfs, tfile->inode, fbn1);
+				bno = alloc_block(tfs, tfile->inode, i);
 				memcpy(bf_new->data , out, tfs->sb->block_size);
 				write_block(tfs, bno, bf_new);
+				add_block_to_inode(tfile->inode, i, bno);
 			}
 
 			out = out + tfs->sb->block_size;
@@ -445,6 +493,7 @@ int testfs_write(testFS tfs, testFile tfile, char *buffer, int size)
 			bzero(bf_new->data, tfs->sb->block_size);
 			memcpy(bf_new->data , out, remaining_size);
 			write_block(tfs, bno, bf_new);
+			add_block_to_inode(tfile->inode, fbn2, bno);
 		}
 	}
 

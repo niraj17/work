@@ -3,7 +3,7 @@
 * Interface for TESTFS used by client program
 */
 
-#define TESTFS_MAGIC "TesTFs1\0"
+#define TESTFS_MAGIC "TesTFs1"
 
 #define INODE_FILE 0
 #define INODE_DIR  1
