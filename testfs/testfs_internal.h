@@ -16,7 +16,7 @@ struct _testfs_superblock {
 	int  total_size; 
 	int  inode_size; 
 	int  inode_count; 
-	int  itable_offset; /* offset of inode table*/
+	int  itable_start; /* start of inode table*/
 	int  itable_size;   /* size of inode table*/
 	int  ibitmap_start; /* offset of inode table bitmap*/
 	int  ibitmap_size;   /* size of inode table bitmap*/
