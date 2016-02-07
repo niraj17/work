@@ -24,6 +24,10 @@ i = i & k;
 -------------------------
 */
 
+/*
+ REMEMBER - you have four bitwise operator + you can do bitshift  !!!!!!
+*/
+
 #include<stdio.h>
 
 int print_bits(unsigned int a)

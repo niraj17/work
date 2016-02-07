@@ -20,7 +20,7 @@ int main()
 	}
 	ret  = testfs_write( tfs, tfile, "Write to file a!", 17 );
 	testfs_close(tfs, tfile);
-	printf("Write done ...now going to read\n");
+	printf("Write done, count=%d, ...now going to read\n", ret);
 
 	tfile = testfs_open(tfs, "/file1", 0);
 	if (tfile == NULL) {
@@ -29,7 +29,7 @@ int main()
 	}
 	ret  = testfs_read(tfs, tfile, buffer, 1024);
 
-	printf("Read data = %s\n", buffer);
+	printf("Read count=%d, data = %s\n",ret,  buffer);
 
 	return 0;
 }

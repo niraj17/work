@@ -1,7 +1,13 @@
 #include<stdio.h>
 #include<stdlib.h>
 
-#define MAX 10
+#define MAX 100
+
+typedef struct stack_s {
+	void *p[MAX];
+	int top;
+} stack_t;
+	
 
 typedef struct adj_node_s {
 	int dest;
@@ -66,6 +72,17 @@ int print_graph(graph_t *g)
 		}
 	}
 	printf("\n");
+}
+int topo_helper(adj_node_t *n, stack_t *st)
+{
+
+
+}
+int topological_sort(graph_t *g)
+{
+	for(
+
+
 }
 
 

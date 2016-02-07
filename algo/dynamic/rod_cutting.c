@@ -11,6 +11,8 @@ int rod_cutting_DP(int length, int cost[])
 	int value[length+1];
 	int i = 0, max, j;
 
+	value[0] = 0;
+
 	for(i=1; i <= length; i++)
 	{
 		for(j=1; j < i ; j++) {
@@ -29,4 +31,3 @@ int main()
 	int r = rod_cutting_DP(8, cost);
 	printf("R is %d\n", r);
 }
-

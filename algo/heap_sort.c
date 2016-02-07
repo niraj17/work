@@ -32,11 +32,15 @@ int extract_min(void) {
 	int min = heap[1];
 	int p, tmp, left, right, ex;
 
-	end--; /* end usually is one beyond the last element*/
+
+	/* no more elements */
+	if (end == 1) return 0;
+
+	end--; /* end is one beyond the last element*/
 	if (end == 1) return heap[end];
 
 	heap[1]= heap[end];
-	end--;
+	//end--;
 
 	/* set parent */
 	p = 1;
@@ -74,12 +78,13 @@ int main(int argc, char *argv[])
 {
 	int i = 0;
 
+	insert(10);
 	insert(9);
 	insert(7);
 	insert(2);
 	insert(3);
 	insert(8);
-	insert(10);
+	insert(4);
 
 	for (i=1; i < end; i++) {
 		printf("%d ", heap[i]);
