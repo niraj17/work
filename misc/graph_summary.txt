@@ -1,0 +1,23 @@
+
+algo 1) Depth first search  - use recursion (or stack)
+algo 2) Breadth first search  - use queue
+
+Q. Shortest path (min number of edge) - Use BFS
+Q. Connected component query - can pre-process the graph using DFS to answer in O(1)
+Q. Is bipartite - Use alternate tags while DFS
+Q. Find a cycle - Use DFS (or use union find)
+Q. Topological sort in DAG - variation of DFS with a temp stack
+
+------------
+Q. Shorted path (when edge has weight) -
+     algo 3) Dijkstra's algorithm -
+		a) Init distance for every vertex to INFINITY. Distance of source as 0.
+		b) From source, go to adjecent vertex and calculate and keep min distance path
+		c) From all the visited node, select the minimum dist node (need a priority Q)as next and go to step b.
+
+Q. Minimum spanning Tree - (Based on Greedy approach)
+
+     algo 4) Kruskal - Take sorted list of edges (based on weight) and add each to the MST if
+                               adding it doesn't create a cycle. (Use union find to detect a cycle)
+                               Complexity (E log E)
+     algo 5) Prim     - Start with a vertex and greedily (of min weight) add edge until you have     total V-1 edges (don't add if both edge are already in MST). Use a priority queue for finding min weight edge every time. Complexity is E log E.
