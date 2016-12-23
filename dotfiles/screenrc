@@ -1,0 +1,3 @@
+
+# huge scrollback buffer
+defscrollback 5000
